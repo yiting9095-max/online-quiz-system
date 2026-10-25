@@ -47,7 +47,7 @@ function message(id,text){$(id).textContent=text}
 function safeText(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 function normalizeUsername(value){return String(value||"").normalize("NFKC").trim().toLowerCase()}
-function validUsername(value){return /^[\\p{L}\\p{N}_-]{2,24}$/u.test(value)}
+function validUsername(value){return /^[\p{L}\p{N}_-]{2,24}$/u.test(value)}
 async function usernameToAuthEmail(value){
  const username=normalizeUsername(value);
  if(!validUsername(username))throw new Error("帳號名稱需為 2–24 個字，只能使用中文、英文、數字、底線或連字號，不可有空格。");
