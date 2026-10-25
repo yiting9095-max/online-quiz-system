@@ -1,3 +1,1 @@
-category,category_label,chapter,question_text,option_a,option_b,option_c,option_d,correct_index,explanation,source_name,source_page,is_active
-professional,室內配線專業科目,接地,示範題目請在正式匯入前替換,選項一,選項二,選項三,選項四,0,此列為格式示範並非正式考題,室內配線丙級證照輔導班題庫.pdf,1,false
-common,共同科目,職業安全,示範題目請在正式匯入前替換,選項一,選項二,選項三,選項四,1,此列為格式示範並非正式考題,請填寫實際題庫名稱,1,false
+category,category_label,chapter,question_text,options,correct_index,explanation,source_name,source_page,is_active
