@@ -15,10 +15,10 @@
 <header class="top"><div class="brand"><div class="logo">配</div><div><h1>室內配線丙級｜線上測驗</h1><p>練習・錯題複習・學習熟練度</p></div></div><button id="logoutBtn" class="ghost hide">登出</button></header>
 <section id="authPanel" class="panel" style="max-width:480px;margin:40px auto">
 <h2 class="section-title">登入你的學習帳號</h2><p class="muted">第一次使用請選擇「建立帳號」。完成後，學習紀錄會保存在雲端。</p>
-<div class="field"><label for="email">電子郵件</label><input id="email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+<div class="field"><label for="username">帳號名稱（2–24 個字）</label><input id="username" type="text" placeholder="例如：小明123" autocomplete="username" minlength="2" maxlength="24" spellcheck="false" required></div>
 <div class="field"><label for="password">密碼（至少 6 個字元）</label><input id="password" type="password" placeholder="輸入密碼" autocomplete="current-password"></div>
 <div class="actions"><button id="loginBtn" class="primary">登入</button><button id="signupBtn" class="secondary">建立帳號</button></div><p id="authMsg" class="muted" role="status"></p>
-<div class="notice">需要先設定 Supabase，才能啟用真正的帳號登入與雲端同步。請勿把資料庫 service_role 金鑰放進網站。</div>
+<div class="notice">不需要提供電子郵件。系統會在 Supabase 內部建立不收信的登入識別碼。請務必記住帳號名稱與密碼；目前沒有電子郵件找回密碼功能。請勿把資料庫 service_role 金鑰放進網站。</div>
 </section>
 <section id="appPanel" class="hide">
 <div class="hero"><div class="pill" style="display:inline-block;background:#ffffff20;color:white">你的個人練習空間</div><h2>把每一次練習，變成考試實力。</h2><p>依科目練習、追蹤錯題，逐步掌握室內配線丙級題庫。作答紀錄會與你的帳號連結。</p></div>
@@ -46,11 +46,51 @@ const configured=window.APP_CONFIG&&window.APP_CONFIG.SUPABASE_URL&&!window.APP_
 function message(id,text){$(id).textContent=text}
 function safeText(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
+function normalizeUsername(value){return String(value||"").normalize("NFKC").trim().toLowerCase()}
+function validUsername(value){return /^[\\p{L}\\p{N}_-]{2,24}$/u.test(value)}
+async function usernameToAuthEmail(value){
+ const username=normalizeUsername(value);
+ if(!validUsername(username))throw new Error("帳號名稱需為 2–24 個字，只能使用中文、英文、數字、底線或連字號，不可有空格。");
+ if(!window.crypto||!crypto.subtle)throw new Error("目前瀏覽器無法安全處理登入識別碼，請改用最新版瀏覽器並透過 HTTPS 開啟網站。");
+ const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(username));
+ const hex=Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
+ // Supabase Auth 目前以 email/password 驗證；此識別碼不是真正的收信地址。
+ return {email:"u"+hex.slice(0,48)+"@accounts.quiz.invalid",username};
+}
+function friendlyAuthError(error){
+ const raw=error&&error.message?error.message:String(error||"未知錯誤");
+ if(/User already registered/i.test(raw))return "這個帳號名稱已經被使用，請換一個名稱。";
+ if(/Invalid login credentials/i.test(raw))return "帳號名稱或密碼錯誤，請再檢查一次。";
+ if(/Email not confirmed/i.test(raw))return "Supabase 尚未關閉電子郵件確認。請依 README 到 Authentication 的 Email 提供者設定中關閉 Confirm email。";
+ if(/email_address_invalid|invalid email/i.test(raw))return "Supabase 不接受目前的內部登入識別碼。請確認使用最新版本程式，並將錯誤訊息回傳，以便調整登入方式。";
+ if(/password should be at least|Password should be at least/i.test(raw))return "密碼太短，請至少使用 6 個字元。";
+ return raw;
+}
 async function init(){if(!configured){message("authMsg","請先在 GitHub 的 config.js 填入 Supabase Project URL 與 anon/public key，再重新部署。");return}supabaseClient=window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL,window.APP_CONFIG.SUPABASE_ANON_KEY);const {data}=await supabaseClient.auth.getSession();if(data.session){user=data.session.user;showApp()}supabaseClient.auth.onAuthStateChange((_event,session)=>{user=session?.user||null;if(user)showApp();else showAuth()})}
 function showAuth(){$("authPanel").classList.remove("hide");$("appPanel").classList.add("hide");$("logoutBtn").classList.add("hide")}
 async function showApp(){$("authPanel").classList.add("hide");$("appPanel").classList.remove("hide");$("logoutBtn").classList.remove("hide");await loadData()}
-$("signupBtn").onclick=async()=>{if(!supabaseClient)return message("authMsg","請先完成 Supabase 設定。");const email=$("email").value.trim(),password=$("password").value;if(!email||password.length<6)return message("authMsg","請輸入有效電子郵件，密碼至少 6 個字元。");const {error}=await supabaseClient.auth.signUp({email,password});message("authMsg",error?error.message:"帳號建立請求已送出。若專案要求電子郵件驗證，請先到信箱完成驗證。")}
-$("loginBtn").onclick=async()=>{if(!supabaseClient)return message("authMsg","請先完成 Supabase 設定。");const {error}=await supabaseClient.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});message("authMsg",error?error.message:"登入成功。")}
+$("signupBtn").onclick=async()=>{
+ if(!supabaseClient)return message("authMsg","請先完成 Supabase 設定。");
+ const usernameRaw=$("username").value,password=$("password").value;
+ if(password.length<6)return message("authMsg","密碼至少需要 6 個字元。");
+ try{
+  const identity=await usernameToAuthEmail(usernameRaw);
+  const {data,error}=await supabaseClient.auth.signUp({email:identity.email,password,options:{data:{username:identity.username}}});
+  if(error)throw error;
+  if(data.session)message("authMsg","帳號建立成功，已登入！請記好帳號名稱和密碼；此系統沒有電子郵件找回密碼功能。");
+  else message("authMsg","註冊沒有建立登入狀態。請確認 Supabase 的 Authentication → Sign In / Providers → Email 中已關閉 Confirm email，然後再試。");
+ }catch(error){message("authMsg",friendlyAuthError(error))}
+}
+$("loginBtn").onclick=async()=>{
+ if(!supabaseClient)return message("authMsg","請先完成 Supabase 設定。");
+ const password=$("password").value;
+ try{
+  const identity=await usernameToAuthEmail($("username").value);
+  const {error}=await supabaseClient.auth.signInWithPassword({email:identity.email,password});
+  if(error)throw error;
+  message("authMsg","登入成功。");
+ }catch(error){message("authMsg",friendlyAuthError(error))}
+}
 $("logoutBtn").onclick=async()=>{if(supabaseClient)await supabaseClient.auth.signOut();showAuth()}
 async function loadData(){if(!user)return;message("authMsg","");const [qres,pres]=await Promise.all([supabaseClient.from("questions").select("*").eq("is_active",true).order("created_at"),supabaseClient.from("user_progress").select("*").eq("user_id",user.id)]);if(qres.error){alert("讀取題庫失敗："+qres.error.message);return}if(pres.error){alert("讀取作答紀錄失敗："+pres.error.message);return}questions=qres.data||[];progressMap={};(pres.data||[]).forEach(p=>progressMap[p.question_id]=p);renderStats();renderWrong();renderMastery()}
 function renderStats(){const rows=Object.values(progressMap),attempts=rows.reduce((n,p)=>n+(p.attempts||0),0),correct=rows.reduce((n,p)=>n+(p.correct_count||0),0);$("totalAttempts").textContent=attempts;$("overallRate").textContent=attempts?Math.round(correct/attempts*100)+"%":"—";$("wrongCount").textContent=rows.filter(p=>(p.wrong_count||0)>0).length}
