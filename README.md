@@ -2,7 +2,7 @@
 
 這是一個獨立的新專案，和既有的 LINE AI 客服、足球戀愛遊戲分開。第一版包含：
 
-- 電子郵件／密碼註冊與登入
+- 使用者名稱／密碼註冊與登入（不要求使用者提供真實電子郵件）
 - 共同科目、室內配線專業科目
 - 一般練習、錯題重測、未練習題目
 - 作答解析、個人答題紀錄與跨裝置同步
@@ -39,11 +39,20 @@
 
 **安全提醒：** 前端只使用公開 anon/publishable key。絕對不要把 `service_role` key、資料庫密碼或其他私密金鑰放進 `config.js`、`index.html` 或公開 GitHub。
 
-## 第三步：設定 Supabase 電子郵件登入
+## 第三步：設定不需電子郵件的帳號名稱登入
 
-1. 在 Supabase 的 Authentication 設定確認 Email provider 已啟用。
-2. 若啟用電子郵件驗證，使用者建立帳號後需要先到信箱點擊驗證連結。
-3. 網站部署到 Render 後，把 Render 網址設定到 Supabase 的 Authentication URL Configuration（Site URL 與 Redirect URLs）。在網站網址尚未確定前，可先設定 Supabase 預設專案網址，部署完成後再補上 Render 網址。
+目前前端讓使用者自行建立帳號名稱與密碼。為了仍使用 Supabase 的安全密碼驗證，網站會在瀏覽器內把正規化後的帳號名稱轉成不可收信的內部登入識別碼，再交給 Supabase Auth；這不會要求使用者提供真的電子郵件。
+
+1. 在 Supabase 專案左側進入 **Authentication → Sign In / Providers → Email**（新版介面名稱可能略有差異）。
+2. 確認 Email 登入 provider 已啟用。
+3. 將 **Confirm email** 關閉，否則 Supabase 會要求驗證內部識別碼，而使用者無法收到該驗證信。
+4. 儲存設定後，再回到 Render 網站測試建立帳號及登入。
+
+**重要限制：**
+- 使用者必須自行記住帳號名稱與密碼；目前沒有忘記密碼的電子郵件找回功能。
+- 帳號名稱會被轉成小寫後比對，因此大小寫不同視為同一個帳號。
+- 帳號名稱只能用中文、英文字母、數字、底線或連字號，長度 2–24 個字，不可有空格。
+- 這是一個使用 Supabase email/password 驗證的相容做法，Supabase Auth 內部會存一個不可收信的識別碼；若未來要做密碼找回、帳號名稱修改或真正的 username-first 後端，需再擴充伺服器端功能。
 
 ## 第四步：部署到 Render
 
@@ -52,7 +61,7 @@
 3. Branch 選 `main`。
 4. Build Command 留空；Publish Directory 填 `.`。
 5. 建立 Static Site，等待部署完成，打開 Render 給你的網站網址。
-6. 第一次註冊帳號與登入時，確認 Supabase Authentication 的 URL 設定正確。
+6. 確認 Supabase Email provider 的 Confirm email 已關閉，然後測試建立帳號、登出再登入。
 
 每次把修改 Commit 到 GitHub 的 `main` 分支後，Render 通常會自動重新部署。
 
@@ -84,6 +93,7 @@
 ## 常見問題
 
 - **網站顯示沒有題目：** 確認題目已匯入 `questions`，`is_active` 設為 `true`，且 `category` 值為 `common` 或 `professional`。
+- **帳號註冊後沒有登入：** 確認 Supabase Authentication 的 Email provider 已關閉 Confirm email，並確認 `config.js` 的 URL/key 正確。
 - **登入成功但讀不到題目：** 確認已執行 SQL、RLS 政策存在、`config.js` 的 URL/key 正確。
 - **答題紀錄無法儲存：** 確認已執行最新的 `supabase-schema.sql`，且登入狀態有效。
 - **不要直接公開敏感資料：** 不要把任何使用者密碼、服務金鑰或資料庫密碼貼到聊天或 GitHub。
