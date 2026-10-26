@@ -33,6 +33,7 @@
 <div class="field"><label for="amount">每回合題數</label><select id="amount"><option>10</option><option>20</option><option>30</option><option value="all">全部符合題目</option></select></div>
 <div class="actions"><button id="startBtn" class="primary">開始作答</button><button id="refreshBtn" class="ghost">更新學習紀錄</button></div>
 <p class="small">題庫尚未匯入時，測驗會顯示空題庫提醒。請先完成下方資料庫設定與題目匯入。</p>
+<p id="questionDataStatus" class="small" role="status">登入後會顯示目前載入的題庫分類與題數。</p>
 </section>
 <section class="panel"><h3 class="section-title">學習熟練度</h3><p class="muted">按章節觀察正確率與練習量。初始熟練度規則：至少作答 5 次、正確率達 80%，且最近 3 次沒有答錯，才標記為「熟練」。</p><div id="masteryList"><p class="muted">登入後載入學習資料。</p></div></section></div>
 <section id="quizPanel" class="panel hide" style="margin-top:18px"><div class="row"><span id="quizProgress" class="pill">第 1 題</span><span id="quizCategory" class="muted"></span></div><div class="bar" style="margin-top:14px"><span id="progressBar"></span></div><div id="questionText" class="question"></div><div id="choices"></div><div id="feedback" class="hide"></div><div class="actions"><button id="submitAnswer" class="primary">確認答案</button><button id="nextQuestion" class="secondary hide">下一題</button><button id="endQuiz" class="ghost">結束本回合</button></div></section>
@@ -92,12 +93,49 @@ $("loginBtn").onclick=async()=>{
  }catch(error){message("authMsg",friendlyAuthError(error))}
 }
 $("logoutBtn").onclick=async()=>{if(supabaseClient)await supabaseClient.auth.signOut();showAuth()}
-async function loadData(){if(!user)return;message("authMsg","");const [qres,pres]=await Promise.all([supabaseClient.from("questions").select("*").eq("is_active",true).order("created_at"),supabaseClient.from("user_progress").select("*").eq("user_id",user.id)]);if(qres.error){alert("讀取題庫失敗："+qres.error.message);return}if(pres.error){alert("讀取作答紀錄失敗："+pres.error.message);return}questions=qres.data||[];progressMap={};(pres.data||[]).forEach(p=>progressMap[p.question_id]=p);renderStats();renderWrong();renderMastery()}
+function normalizedCategory(q){
+ const raw=String(q.category||"").trim().toLowerCase();
+ if(["common","general-common","共同科目"].includes(raw))return "common";
+ if(["professional","occupation","專業科目","室內配線專業科目"].includes(raw))return "professional";
+ const label=String(q.category_label||"").trim();
+ const combined=raw+" "+label;
+ if(/職業安全衛生|工作倫理|職業道德|環境保護|節能減碳|共同科目/.test(combined))return "common";
+ if(/室內配線|屋內線路裝修|professional/.test(combined))return "professional";
+ return raw;
+}
+function renderQuestionDataStatus(){
+ const common=questions.filter(q=>normalizedCategory(q)==="common").length;
+ const professional=questions.filter(q=>normalizedCategory(q)==="professional").length;
+ const unknown=questions.length-common-professional;
+ const raw=[...new Set(questions.map(q=>String(q.category??"（空白）").trim()))];
+ let status="目前載入 "+questions.length+" 題：共同科目 "+common+" 題、室內配線專業科目 "+professional+" 題。";
+ if(unknown>0)status+=" 另有 "+unknown+" 題分類未辨識；資料庫 category 欄位值："+raw.join("、")+"。";
+ if(questions.length===0)status="網站目前從資料庫讀到 0 題。請檢查 Supabase 專案網址、RLS 權限與題目是否 is_active=true。";
+ $("questionDataStatus").textContent=status;
+}
+async function loadData(){if(!user)return;message("authMsg","");const [qres,pres]=await Promise.all([supabaseClient.from("questions").select("*").eq("is_active",true).order("created_at"),supabaseClient.from("user_progress").select("*").eq("user_id",user.id)]);if(qres.error){alert("讀取題庫失敗："+qres.error.message);return}if(pres.error){alert("讀取作答紀錄失敗："+pres.error.message);return}questions=qres.data||[];progressMap={};(pres.data||[]).forEach(p=>progressMap[p.question_id]=p);renderQuestionDataStatus();renderStats();renderWrong();renderMastery()}
 function renderStats(){const rows=Object.values(progressMap),attempts=rows.reduce((n,p)=>n+(p.attempts||0),0),correct=rows.reduce((n,p)=>n+(p.correct_count||0),0);$("totalAttempts").textContent=attempts;$("overallRate").textContent=attempts?Math.round(correct/attempts*100)+"%":"—";$("wrongCount").textContent=rows.filter(p=>(p.wrong_count||0)>0).length}
 function renderMastery(){const cats=[...new Set(questions.map(q=>q.chapter||q.category_label||"未分類"))];if(!cats.length){$("masteryList").innerHTML='<p class="muted">目前還沒有題目。匯入 PDF／Word 題庫並完成核對後，這裡會顯示各章節熟練度。</p>';return}$("masteryList").innerHTML=cats.map(cat=>{const qs=questions.filter(q=>(q.chapter||q.category_label||"未分類")===cat),ps=qs.map(q=>progressMap[q.id]).filter(Boolean),attempts=ps.reduce((n,p)=>n+(p.attempts||0),0),correct=ps.reduce((n,p)=>n+(p.correct_count||0),0),rate=attempts?Math.round(correct/attempts*100):0,mastered=ps.filter(p=>(p.attempts||0)>=5&&(p.correct_count||0)/(p.attempts||1)>=.8&&(p.recent_results||[]).slice(-3).every(Boolean)).length;return '<div class="listrow"><div style="flex:1"><strong>'+safeText(cat)+'</strong><div class="bar" style="margin-top:8px"><span style="width:'+rate+'%"></span></div><div class="small">'+attempts+' 次作答 · 正確率 '+(attempts?rate+'%':'尚無紀錄')+'</div></div><span class="pill">'+mastered+'/'+qs.length+' 題熟練</span></div>'}).join("")}
 function renderWrong(){const wrong=questions.filter(q=>(progressMap[q.id]?.wrong_count||0)>0);if(!wrong.length){$("wrongList").innerHTML='<p class="muted">目前沒有已記錄的錯題，或題庫尚未匯入。</p>';return}$("wrongList").innerHTML=wrong.slice(0,8).map(q=>'<div class="listrow"><div><strong>'+safeText(q.chapter||q.category_label||"題目")+'</strong><div>'+safeText(q.question_text)+'</div><div class="small">累計答錯 '+(progressMap[q.id]?.wrong_count||0)+' 次</div></div><span class="pill">錯題</span></div>').join("")+(wrong.length>8?'<p class="small">另有 '+(wrong.length-8)+' 題，按「重測錯題」可開始練習。</p>':"")}
-function startQuiz(forceWrong=false){const category=$("category").value,mode=forceWrong?"wrong":$("mode").value;let pool=questions.filter(q=>category==="all"||q.category===category);if(mode==="wrong")pool=pool.filter(q=>(progressMap[q.id]?.wrong_count||0)>0);if(mode==="unseen")pool=pool.filter(q=>!progressMap[q.id]);if(!pool.length){alert(questions.length?"這個條件下沒有可練習的題目。請更換類別或練習方式。":"目前資料庫還沒有題目。請先依 README 的步驟匯入並核對題庫。");return}pool=shuffle(pool);const amount=$("amount").value;quiz=amount==="all"?pool:pool.slice(0,Number(amount));qi=0;selected=null;answered=false;sessionCorrect=0;$("quizPanel").classList.remove("hide");$("quizPanel").scrollIntoView({behavior:"smooth",block:"start"});showQuestion()}
-function showQuestion(){const q=quiz[qi];selected=null;answered=false;$("quizProgress").textContent='第 '+(qi+1)+' / '+quiz.length+' 題';$("quizCategory").textContent=(q.category==="common"?"共同科目":"室內配線專業科目")+(q.chapter?" · "+q.chapter:"");$("progressBar").style.width=(qi/quiz.length*100)+"%";$("questionText").textContent=q.question_text;$("choices").innerHTML=(q.options||[]).map((opt,i)=>'<button class="choice" data-index="'+i+'"><span class="pill">'+String.fromCharCode(65+i)+'</span><span>'+safeText(opt)+'</span></button>').join("");[...$("choices").querySelectorAll(".choice")].forEach(b=>b.onclick=()=>{if(answered)return;selected=Number(b.dataset.index);[...$("choices").children].forEach(x=>x.classList.remove("selected"));b.classList.add("selected")});$("feedback").className="hide";$("feedback").textContent="";$("submitAnswer").classList.remove("hide");$("nextQuestion").classList.add("hide");$("endQuiz").classList.remove("hide")}
+function startQuiz(forceWrong=false){
+ const category=$("category").value,mode=forceWrong?"wrong":$("mode").value;
+ let pool=questions.filter(q=>category==="all"||normalizedCategory(q)===category);
+ const categoryCount=pool.length;
+ if(mode==="wrong")pool=pool.filter(q=>(progressMap[q.id]?.wrong_count||0)>0);
+ if(mode==="unseen")pool=pool.filter(q=>!progressMap[q.id]||(progressMap[q.id].attempts||0)===0);
+ if(!pool.length){
+  if(!questions.length)alert("網站目前讀到 0 題，請查看「題庫資料狀態」並確認 Supabase 專案與權限。");
+  else if(categoryCount===0)alert("網站有讀到題目，但目前分類「"+(category==="common"?"共同科目":"室內配線專業科目")+"」是 0 題。請看題庫資料狀態；若分類數量不對，可能是匯入 CSV 時 category 欄位對應錯誤。");
+  else if(mode==="wrong")alert("這個科目目前沒有已答錯的題目可以重測。請把「練習方式」切換成「一般練習」。");
+  else if(mode==="unseen")alert("這個科目目前沒有尚未練習的題目。請切換成「一般練習」或選擇其他科目。");
+  else alert("這個條件下沒有可練習的題目，請查看題庫資料狀態。");
+  return;
+ }
+ pool=shuffle(pool);
+ const amount=$("amount").value;quiz=amount==="all"?pool:pool.slice(0,Number(amount));
+ qi=0;selected=null;answered=false;sessionCorrect=0;$("quizPanel").classList.remove("hide");$("quizPanel").scrollIntoView({behavior:"smooth",block:"start"});showQuestion()
+}
+function showQuestion(){const q=quiz[qi];selected=null;answered=false;$("quizProgress").textContent='第 '+(qi+1)+' / '+quiz.length+' 題';$("quizCategory").textContent=(normalizedCategory(q)==="common"?"共同科目":"室內配線專業科目")+(q.chapter?" · "+q.chapter:"");$("progressBar").style.width=(qi/quiz.length*100)+"%";$("questionText").textContent=q.question_text;$("choices").innerHTML=(q.options||[]).map((opt,i)=>'<button class="choice" data-index="'+i+'"><span class="pill">'+String.fromCharCode(65+i)+'</span><span>'+safeText(opt)+'</span></button>').join("");[...$("choices").querySelectorAll(".choice")].forEach(b=>b.onclick=()=>{if(answered)return;selected=Number(b.dataset.index);[...$("choices").children].forEach(x=>x.classList.remove("selected"));b.classList.add("selected")});$("feedback").className="hide";$("feedback").textContent="";$("submitAnswer").classList.remove("hide");$("nextQuestion").classList.add("hide");$("endQuiz").classList.remove("hide")}
 $("submitAnswer").onclick=async()=>{if(selected===null)return alert("請先選擇一個答案。");if(answered)return;answered=true;const q=quiz[qi],isCorrect=selected===Number(q.correct_index);if(isCorrect)sessionCorrect++;const buttons=[...$("choices").children];buttons.forEach((b,i)=>{b.disabled=true;if(i===Number(q.correct_index))b.classList.add("correct");if(i===selected&&!isCorrect)b.classList.add("wrong")});$("feedback").className="feedback "+(isCorrect?"ok":"no");$("feedback").textContent=(isCorrect?"答對了！":"答錯了。")+(q.explanation?" 解說："+q.explanation:"")+"（正確答案："+String.fromCharCode(65+Number(q.correct_index))+"）";$("submitAnswer").classList.add("hide");$("nextQuestion").classList.remove("hide");$("progressBar").style.width=((qi+1)/quiz.length*100)+"%";await saveProgress(q,isCorrect)}
 async function saveProgress(q,correct){const old=progressMap[q.id]||{attempts:0,correct_count:0,wrong_count:0,recent_results:[]};const recent=[...(old.recent_results||[]),correct].slice(-5);const row={user_id:user.id,question_id:q.id,attempts:(old.attempts||0)+1,correct_count:(old.correct_count||0)+(correct?1:0),wrong_count:(old.wrong_count||0)+(correct?0:1),recent_results:recent,last_answer_index:selected,last_answer_correct:correct,last_answered_at:new Date().toISOString()};const {data,error}=await supabaseClient.from("user_progress").upsert(row,{onConflict:"user_id,question_id"}).select().single();if(error){alert("答案已在本回合判定，但雲端紀錄寫入失敗："+error.message);return}progressMap[q.id]=data;renderStats();renderWrong();renderMastery()}
 $("nextQuestion").onclick=()=>{if(qi<quiz.length-1){qi++;showQuestion()}else{alert('本回合完成！答對 '+sessionCorrect+' / '+quiz.length+' 題。');$("quizPanel").classList.add("hide");loadData()}}
