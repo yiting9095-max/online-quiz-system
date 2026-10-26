@@ -98,3 +98,17 @@
 - **答題紀錄無法儲存：** 確認已執行最新的 `supabase-schema.sql`，且登入狀態有效。
 - **不要直接公開敏感資料：** 不要把任何使用者密碼、服務金鑰或資料庫密碼貼到聊天或 GitHub。
 
+
+
+## 第六步：匯入題庫到 Supabase
+
+已整理好官方學科題庫 CSV，放在 GitHub 的 [imports 資料夾](./imports/README.md)。總共 1,018 題：室內配線專業科目 618 題，以及四類共同科目各 100 題。
+
+1. 逐一打開 [imports 資料夾](./imports) 中的 CSV 檔案，按 **Raw**，將檔案下載到電腦。
+2. 進入 Supabase → **Table Editor → questions → Import data from CSV**。
+3. 一次匯入一個 CSV，5 個檔案都完成才算匯入完整。
+4. **請勿重複匯入同一個 CSV**，以免題目重複。
+
+目前 66 題含圖題先設為 `is_active=false`，因網站尚未支援題圖顯示；其餘 952 題可先練習。詳情與題庫版次請看 [imports/README.md](./imports/README.md)。
+
+來源註記：題庫來自勞動部勞動力發展署技能檢定中心公開資料。官方網站資料開放宣告要求利用時註明來源，使用時也不應暗示測驗網站由政府機關認可或營運。
