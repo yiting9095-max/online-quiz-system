@@ -95,12 +95,23 @@ $("loginBtn").onclick=async()=>{
 $("logoutBtn").onclick=async()=>{if(supabaseClient)await supabaseClient.auth.signOut();showAuth()}
 function normalizedCategory(q){
  const raw=String(q.category||"").trim().toLowerCase();
+ const label=String(q.category_label||"").trim();
+ const source=String(q.source_name||"").trim();
+ // Prefer the explicit official subject code/source label. This also repairs
+ // category values accidentally mapped incorrectly during CSV import.
+ if(/90006|90007|90008|90009/.test(source))return "common";
+ if(/007003A13|00700/.test(source))return "professional";
+ const commonText=/(職業安全衛生|工作倫理|職業道德|環境保護|節能減碳|共同科目)/;
+ const professionalText=/(室內配線|屋內線路裝修|professional|專業科目)/i;
+ if(commonText.test(label))return "common";
+ if(professionalText.test(label))return "professional";
  if(["common","general-common","共同科目"].includes(raw))return "common";
  if(["professional","occupation","專業科目","室內配線專業科目"].includes(raw))return "professional";
- const label=String(q.category_label||"").trim();
+ if(/90006|90007|90008|90009/.test(raw))return "common";
+ if(/007003A13|00700/.test(raw))return "professional";
  const combined=raw+" "+label;
- if(/職業安全衛生|工作倫理|職業道德|環境保護|節能減碳|共同科目/.test(combined))return "common";
- if(/室內配線|屋內線路裝修|professional/.test(combined))return "professional";
+ if(commonText.test(combined))return "common";
+ if(professionalText.test(combined))return "professional";
  return raw;
 }
 function renderQuestionDataStatus(){
